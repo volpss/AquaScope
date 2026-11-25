@@ -11,6 +11,7 @@ As subpastas agrupam os módulos por área e são espelhadas em `include/`:
 ```text
 src/
 ├── main.cpp
+├── mainOriginal.cpp
 ├── hardware/
 │   ├── sensors.cpp
 │   ├── indicators.cpp
@@ -29,12 +30,13 @@ src/
 
 | Arquivo | Responsabilidade |
 | --- | --- |
-| [src/main.cpp](src/main.cpp) | `setup()`, `loop()` e agendamento das tarefas. |
-| [include/config.h](include/config.h) | Pinos, limites, intervalos e inclusão da configuração privada gerada. |
+| [src/mainOriginal.cpp](src/mainOriginal.cpp) | Inicialização e ciclo do firmware completo no ambiente `uno_r4_wifi`. |
+| [src/main.cpp](src/main.cpp) | Sketch de bancada de pH no ambiente `uno_r4_wifi_ph`. |
+| [include/config.h](include/config.h) | Pinos, limites e intervalos. |
 | [.env.example](.env.example) | Exemplo das variáveis privadas para configurar no `.env` local. |
 | [scripts/load_env.py](scripts/load_env.py) | Hook de compilação que carrega o `.env` e disponibiliza o cabeçalho privado. |
 | [include/models.h](include/models.h) | Estruturas de leitura e estados dos sensores. |
-| [src/hardware/sensors.cpp](src/hardware/sensors.cpp) | Leitura analógica, conversões e classificação das leituras. |
+| [src/hardware/sensors.cpp](src/hardware/sensors.cpp) | Amostragem, filtragem e conversão dos sensores, com controle de alimentação do TDS. |
 | [src/hardware/indicators.cpp](src/hardware/indicators.cpp) | LEDs, buzzer, botão e silêncio temporário do alarme. |
 | [src/hardware/led_matrix.cpp](src/hardware/led_matrix.cpp) | Peixe na matriz de LEDs integrada de 12 × 8. |
 | [src/network/connectivity.cpp](src/network/connectivity.cpp) | Conexão e reconexão Wi-Fi e atendimento OTA. |
@@ -42,7 +44,7 @@ src/
 | [src/data/database.cpp](src/data/database.cpp) | JSON e envio HTTPS à API REST do Supabase. |
 | [src/data/offline_queue.cpp](src/data/offline_queue.cpp) | Fila circular de leituras em RAM. |
 | [src/data/telemetry.cpp](src/data/telemetry.cpp) | Envio da leitura atual, armazenamento em caso de falha e sincronização da fila. |
-| [src/network/web_server.cpp](src/network/web_server.cpp) | Página HTTP local de monitoramento. |
+| [src/network/web_server.cpp](src/network/web_server.cpp) | Página HTTP local e rotas JSON das medições. |
 
 Cada módulo tem seu cabeçalho de mesmo nome na subpasta correspondente de `include/`. Por exemplo, `src/hardware/sensors.cpp` usa `include/hardware/sensors.h`, referenciado com `#include "hardware/sensors.h"`. As variáveis internas ficam restritas ao respectivo `.cpp`; os outros módulos acessam funções declaradas no `.h`. As leituras dos sensores são expostas por uma referência somente para leitura.
 
@@ -50,13 +52,60 @@ Cada módulo tem seu cabeçalho de mesmo nome na subpasta correspondente de `inc
 
 ## Funcionamento atual
 
-O ciclo principal atende Wi-Fi, OTA, página local e alarmes. Os sensores são lidos a cada 2 segundos. A cada 15 segundos, o programa tenta enviar a leitura atual; sem conexão ou se o envio falhar, ela entra na fila offline.
+O ciclo principal atende Wi-Fi, OTA, página local e alarmes. A cada 2 segundos, inicia uma janela de 30 amostras de temperatura e pH, com pelo menos 10 ms entre elas. O TDS tem uma medição própria a cada 5 minutos. A cada 15 segundos, tenta enviar o conjunto mais recente se os três canais estiverem válidos. Sem conexão ou se o envio falhar, o conjunto entra na fila offline.
 
 Na inicialização, a matriz integrada exibe um peixe estático. O desenho fica em `desenhoPeixe`, no módulo `hardware/led_matrix.cpp`: cada `1` acende um LED e cada `0` o apaga. A biblioteca `Arduino_LED_Matrix` já acompanha o framework da placa; não há dependência adicional no `platformio.ini` nem chamadas extras no `loop()`.
 
 A fila comporta 400 registros e sobrescreve o mais antigo quando cheia. Com conexão, o programa tenta sincronizar até 50 registros por lote, em intervalos de pelo menos 1 segundo, removendo-os somente após a confirmação do envio. Requisições de rede podem prolongar esses intervalos.
 
-A fila fica apenas na RAM: desligar ou reiniciar a placa perde os registros pendentes. As conversões atuais de pH e TDS usam temperaturas dos canais A1 e A2 como simulação; a separação em módulos preserva esse comportamento.
+A fila fica apenas na RAM: desligar ou reiniciar a placa perde os registros pendentes.
+
+| Entrada | Ligação | Conversão |
+| --- | --- | --- |
+| `A0` | `5V` → resistor de `10 kΩ` → `A0` → NTC → `GND` | Temperatura em °C. |
+| `A1` | `PO` do PH-4502C, com GND comum e a sonda no BNC | pH estimado com ponto neutro de 2,500 V e inclinação provisória de −5,70 pH/V. |
+| `A2` | Saída analógica do módulo de TDS, com GND comum | TDS estimado em ppm, compensado pela temperatura de `A0` com a [curva do Gravity TDS](https://wiki.dfrobot.com/sen0244/docs/20305). |
+
+O ajuste de 2,500 V foi feito com o BNC em curto. Retire o jumper e conecte a sonda para medir a água. O pH tem precisão pendente de calibração com soluções tampão. Se algum sensor estiver sem leitura válida, a página local mostra erro nesse canal e o conjunto fica fora da telemetria.
+
+### Alimentação e calibração do TDS
+
+Com o Arduino desligado, faça as ligações abaixo com um módulo relé de 5 V acionado em nível baixo. Se o relé tiver seletor `H/L`, use `L`. A corrente do TDS vem do pino `5V` do Uno e passa pelos contatos `COM` e `NO`.
+
+A ligação direta entre `D7` e `VCC` do TDS pode ultrapassar o [limite de 8 mA do GPIO](https://docs.arduino.cc/hardware/uno-r4-wifi/) quando os [capacitores de alimentação do módulo](https://dfimg.dfrobot.com/wiki/20205/SEN0244_analog-tds-sensor_schematics_V1.0.pdf) carregam. O valor especificado de 3 a 6 mA refere-se à corrente de funcionamento.
+
+| Ponto | Ligação |
+| --- | --- |
+| `IN` do relé | `D7` do Arduino |
+| `VCC` e `COM` do relé | `5V` do Arduino |
+| `NO` do relé | `+` do módulo TDS |
+| `NC` do relé | Sem ligação |
+| `GND` do relé e `-` do TDS | `GND` do Arduino |
+| `A` do TDS | `A2` do Arduino |
+
+O firmware configura `D7` como saída em `HIGH` para manter o relé desligado. Durante a medição, comanda o relé com `LOW`. O primeiro pulso ocorre após a primeira leitura de temperatura e pH. Os pulsos seguintes são agendados a cada 5 minutos por `millis()`, inclusive sem Wi-Fi. Em cada pulso, o firmware aguarda 2,5 segundos, coleta 30 amostras em `A2` e desliga aos 3 segundos. O atendimento de rede e as leituras de pH aguardam o fim do pulso.
+
+O Monitor Serial mostra `TDS: ciclo concluido` a cada pulso. Entre pulsos, a página, a API e a telemetria mostram o último resultado de TDS. Confira com um multímetro se o `VCC` do módulo sobe para perto de `5V` durante o pulso e cai depois.
+
+Para conferir a precisão, coloque a sonda e o NTC na mesma solução de referência de [707 ppm a 25 °C](https://wiki.dfrobot.com/sen0244/docs/20304) e aguarde um ciclo. Se a leitura estiver estável e precisar de correção, ajuste `FATOR_CALIBRACAO_TDS` em [include/config.h](include/config.h) para `707 / valor exibido` a partir do fator inicial `1.0`. Grave novamente e confira o resultado na mesma solução.
+
+### API HTTP local
+
+Use o IP da placa mostrado no Monitor Serial. A rota `GET /` abre a página HTML. Cada rota abaixo retorna a leitura mais recente do seu sensor em JSON.
+
+| Rota | Medição | Unidade |
+| --- | --- | --- |
+| `GET /api/temperatura` | Temperatura do NTC em `A0` | `°C` |
+| `GET /api/ph` | pH em `A1` | `pH` |
+| `GET /api/tds` | TDS em `A2` | `ppm` |
+
+Exemplo de resposta de `GET /api/temperatura`:
+
+```json
+{"valor":27.1,"unidade":"°C","estado":"normal"}
+```
+
+O campo `estado` pode ser `normal`, `abaixo_limite`, `acima_limite` ou `sem_leitura`. A rota retorna HTTP `503` e `"valor":null` quando a medição não está disponível. Os limites de alerta não impedem a consulta de valores válidos.
 
 ## Compilar e enviar
 
@@ -107,6 +156,17 @@ Os testes do carregador podem ser executados sem conectar a placa:
 ```powershell
 python -m unittest discover -s test -p test_env_config.py
 ```
+
+## Bancada de pH
+
+O ambiente `uno_r4_wifi_ph` lê a saída `PO` do módulo em `A1` e mostra o ADC médio e a tensão estimada no Monitor Serial. Ele compila sem `.env`.
+
+```sh
+pio run -e uno_r4_wifi_ph -t upload
+pio device monitor -b 9600
+```
+
+Para retomar o monitoramento do aquário, grave o ambiente padrão `uno_r4_wifi`.
 
 ## Registros do projeto
 

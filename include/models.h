@@ -25,10 +25,7 @@ struct LeiturasSensores
   float temperatura = 0.0;
   float ph = 0.0;
   float tds = 0.0;
-  // As temperaturas de A1 e A2 são a base da simulação atual de pH e TDS.
-  float temperaturaBasePh = 0.0;
-  float temperaturaBaseTds = 0.0;
-  EstadoSensor estadoTemperatura = SENSOR_NORMAL;
-  EstadoSensor estadoPh = SENSOR_NORMAL;
-  EstadoSensor estadoTds = SENSOR_NORMAL;
+  EstadoSensor estadoTemperatura = SENSOR_SEM_LEITURA;
+  EstadoSensor estadoPh = SENSOR_SEM_LEITURA;
+  EstadoSensor estadoTds = SENSOR_SEM_LEITURA;
 };

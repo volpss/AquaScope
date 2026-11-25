@@ -2,6 +2,9 @@
 
 #include "models.h"
 
-// Leitura, conversão e classificação dos sensores; rede e fila entram apenas no log.
-void lerEProcessarSensores(bool wifiConectado, uint16_t quantidadeFilaOffline);
+void iniciarSensores();
+// Retorna true quando temperatura/pH ou TDS foram atualizados.
+bool atualizarSensores(unsigned long agoraMs);
+bool medicaoTdsEmAndamento();
 const LeiturasSensores &obterLeituras();
+void publicarLeiturasSensores(bool wifiConectado, uint16_t quantidadeFilaOffline);

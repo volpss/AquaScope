@@ -6,7 +6,7 @@ Desenvolver um projeto acadêmico de monitoramento de aquário com Arduino Uno R
 
 ## Escopo
 
-Firmware para Arduino Uno R4 WiFi com leituras analógicas, indicadores locais, conexão Wi-Fi, página HTTP, envio ao Supabase e fila offline em RAM. As conversões atuais de pH e TDS são simuladas a partir das temperaturas dos canais A1 e A2.
+Firmware para Arduino Uno R4 WiFi com leituras analógicas de temperatura (`A0`), pH (`A1`) e TDS (`A2`), indicadores locais, conexão Wi-Fi, página HTTP, envio ao Supabase e fila offline em RAM.
 
 A organização usa módulos `.h`/`.cpp`, com interfaces em `include/` e implementações em `src/`, agrupadas nas pastas correspondentes `hardware/`, `network/` e `data/`. A configuração de compilação fica no `platformio.ini`. O mapa dos módulos e os comandos de uso ficam no [README.md](README.md).
 
@@ -22,6 +22,6 @@ A configuração `WIFI_REDES` contém uma lista JSON de objetos com `nome` e `se
 
 ## Fontes, chats e projetos relacionados
 
-- Fontes locais: [ciclo principal](src/main.cpp), [configuração do firmware](include/config.h) e [configuração do PlatformIO](platformio.ini).
+- Fontes locais: [ciclo do firmware completo](src/mainOriginal.cpp), [sketch de bancada de pH](src/main.cpp), [configuração do firmware](include/config.h) e [configuração do PlatformIO](platformio.ini).
 - O usuário informou nesta conversa, em 23/11/2026, que o projeto estava funcionando antes da separação em módulos.
 - Não há vínculo externo de chat ou de outro projeto registrado nestes arquivos.

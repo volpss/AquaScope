@@ -9,7 +9,9 @@
 void enviarOuArmazenarLeitura()
 {
   const LeiturasSensores &leituras = obterLeituras();
-  if (leituras.temperatura == LEITURA_INVALIDA || leituras.temperaturaBasePh == LEITURA_INVALIDA || leituras.temperaturaBaseTds == LEITURA_INVALIDA)
+  if (leituras.estadoTemperatura == SENSOR_SEM_LEITURA ||
+      leituras.estadoPh == SENSOR_SEM_LEITURA ||
+      leituras.estadoTds == SENSOR_SEM_LEITURA)
   {
     return;
   }

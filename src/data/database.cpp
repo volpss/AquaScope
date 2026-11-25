@@ -3,6 +3,7 @@
 #include "network/clock.h"
 #include "config.h"
 #include "network/connectivity.h"
+#include "private_config.h"
 
 namespace
 {

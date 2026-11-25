@@ -4,6 +4,7 @@
 #include "network/clock.h"
 #include "config.h"
 #include "network/web_server.h"
+#include "private_config.h"
 
 namespace
 {

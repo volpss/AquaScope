@@ -1,62 +1,55 @@
 #include <Arduino.h>
 
-#include "config.h"
-#include "network/connectivity.h"
-#include "hardware/indicators.h"
-#include "hardware/led_matrix.h"
-#include "data/offline_queue.h"
-#include "hardware/sensors.h"
-#include "data/telemetry.h"
-#include "network/web_server.h"
-
-namespace
-{
-unsigned long ultimaLeituraSensoresMs = 0;
-unsigned long ultimoEnvioNuvemMs = 0;
-unsigned long ultimaSincronizacaoFilaMs = 0;
-} // namespace
+constexpr int PINO_PH = A1;
+constexpr int AMOSTRAS = 30;
 
 void setup()
 {
-  Serial.begin(VELOCIDADE_SERIAL);
-  iniciarIndicadores();
-  iniciarMatrizLed();
+  Serial.begin(9600);
+  analogReadResolution(10); // 0 a 1023
+  delay(1000);
 
-  Serial.println("=== Sistema IoT Aquario Iniciado (Buffer RAM) ===");
-  iniciarConectividade();
-  lerEProcessarSensores(wifiEstaConectado(), obterQuantidadeFilaOffline());
+  Serial.println("Leitura de tensao do modulo de pH em A1");
 }
 
 void loop()
 {
-  unsigned long agoraMs = millis();
+  int leituras[AMOSTRAS];
 
-  gerenciarWifi();
-
-  processarOta();
-
-  atenderNavegador();
-
-  atualizarIndicadores(agoraMs);
-  gerenciarAlarme(agoraMs);
-
-  if (agoraMs - ultimaLeituraSensoresMs >= INTERVALO_LEITURA_SENSORES_MS)
+  for (int i = 0; i < AMOSTRAS; i++)
   {
-    ultimaLeituraSensoresMs = agoraMs;
-    lerEProcessarSensores(wifiEstaConectado(), obterQuantidadeFilaOffline());
+    leituras[i] = analogRead(PINO_PH);
+    delay(10);
   }
 
-  // A cada 15s: envia a leitura atual direto se online, ou guarda na RAM se offline
-  if (agoraMs - ultimoEnvioNuvemMs >= INTERVALO_ENVIO_NUVEM_MS)
+  // Ordena as amostras para remover as 5 menores e as 5 maiores.
+  for (int i = 0; i < AMOSTRAS - 1; i++)
   {
-    ultimoEnvioNuvemMs = agoraMs;
-    enviarOuArmazenarLeitura();
+    for (int j = i + 1; j < AMOSTRAS; j++)
+    {
+      if (leituras[j] < leituras[i])
+      {
+        int temporaria = leituras[i];
+        leituras[i] = leituras[j];
+        leituras[j] = temporaria;
+      }
+    }
   }
 
-  // Se reconectou e há registros guardados na RAM, descarrega lotes de 50 a cada 1s
-  if (wifiEstaConectado() && obterQuantidadeFilaOffline() > 0 && (agoraMs - ultimaSincronizacaoFilaMs >= INTERVALO_SINCRONIZACAO_FILA_MS))
+  long soma = 0;
+  for (int i = 5; i < AMOSTRAS - 5; i++)
   {
-    ultimaSincronizacaoFilaMs = agoraMs;
-    sincronizarFilaOffline();
+    soma += leituras[i];
   }
+
+  float mediaADC = soma / 20.0;
+  float tensao = mediaADC * (5.0 / 1023.0);
+
+  Serial.print("ADC medio: ");
+  Serial.print(mediaADC, 1);
+  Serial.print(" | Tensao: ");
+  Serial.print(tensao, 3);
+  Serial.println(" V");
+
+  delay(1000);
 }
