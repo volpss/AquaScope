@@ -52,7 +52,7 @@ Cada módulo tem seu cabeçalho de mesmo nome na subpasta correspondente de `inc
 
 ## Funcionamento atual
 
-O ciclo principal atende Wi-Fi, OTA, página local e alarmes. A cada 2 segundos, inicia uma janela de 30 amostras de temperatura e pH, com pelo menos 10 ms entre elas. O TDS tem uma medição própria a cada 5 minutos. A cada 15 segundos, tenta enviar o conjunto mais recente se os três canais estiverem válidos. Sem conexão ou se o envio falhar, o conjunto entra na fila offline.
+O ciclo principal atende Wi-Fi, OTA, página local e alarmes. A cada 2 segundos, inicia uma janela de 30 amostras de temperatura e pH, com pelo menos 10 ms entre elas. O TDS tem um intervalo próprio, descrito abaixo. A cada 15 segundos, tenta enviar o conjunto mais recente se os três canais estiverem válidos. Sem conexão ou se o envio falhar, o conjunto entra na fila offline.
 
 Na inicialização, a matriz integrada exibe um peixe estático. O desenho fica em `desenhoPeixe`, no módulo `hardware/led_matrix.cpp`: cada `1` acende um LED e cada `0` o apaga. A biblioteca `Arduino_LED_Matrix` já acompanha o framework da placa; não há dependência adicional no `platformio.ini` nem chamadas extras no `loop()`.
 
@@ -83,7 +83,9 @@ A ligação direta entre `D7` e `VCC` do TDS pode ultrapassar o [limite de 8 mA 
 | `GND` do relé e `-` do TDS | `GND` do Arduino |
 | `A` do TDS | `A2` do Arduino |
 
-O firmware configura `D7` como saída em `HIGH` para manter o relé desligado. Durante a medição, comanda o relé com `LOW`. O primeiro pulso ocorre após a primeira leitura de temperatura e pH. Os pulsos seguintes são agendados a cada 5 minutos por `millis()`, inclusive sem Wi-Fi. Em cada pulso, o firmware aguarda 2,5 segundos, coleta 30 amostras em `A2` e desliga aos 3 segundos. O atendimento de rede e as leituras de pH aguardam o fim do pulso.
+O firmware configura `D7` como saída em `HIGH` para manter o relé desligado. Durante a medição, comanda o relé com `LOW`. O primeiro pulso ocorre após a primeira leitura de temperatura e pH. Os pulsos seguintes são agendados por `millis()`, inclusive sem Wi-Fi. Em cada pulso, o firmware aguarda 2,5 segundos, coleta 30 amostras em `A2` e desliga aos 3 segundos. O atendimento de rede e as leituras de pH aguardam o fim do pulso.
+
+Para o teste, `USAR_INTERVALO_TESTE_TDS` está em `true` em [include/config.h](include/config.h), com um pulso a cada 30 segundos. Ao terminar, ajuste a opção para `false` e grave o firmware novamente para voltar ao intervalo de 5 minutos.
 
 O Monitor Serial mostra `TDS: ciclo concluido` a cada pulso. Entre pulsos, a página, a API e a telemetria mostram o último resultado de TDS. Confira com um multímetro se o `VCC` do módulo sobe para perto de `5V` durante o pulso e cai depois.
 

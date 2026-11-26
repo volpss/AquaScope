@@ -20,7 +20,7 @@ O ambiente padrão `uno_r4_wifi` usa `mainOriginal.cpp`. O firmware lê a temper
 
 O servidor HTTP local oferece as rotas JSON `GET /api/temperatura`, `GET /api/ph` e `GET /api/tds`. A compilação com as novas rotas passou no ambiente `uno_r4_wifi`.
 
-O usuário informou que montou a alimentação do TDS com relé. O firmware configura `D7` como saída em `HIGH` e aciona o relé em `LOW` por 3 segundos a cada 5 minutos. A entrada `A2` é amostrada após 2,5 segundos de estabilização. Entre ciclos, o firmware mantém o último resultado. A compilação `uno_r4_wifi` passou com 16.240 bytes de RAM e 75.760 bytes de Flash.
+O usuário informou que montou a alimentação do TDS com relé. O firmware configura `D7` como saída em `HIGH` e aciona o relé em `LOW` por 3 segundos. O intervalo de teste está ativo em `USAR_INTERVALO_TESTE_TDS` e agenda um ciclo a cada 30 segundos. O intervalo normal de 5 minutos volta quando a opção estiver em `false` e o firmware for gravado novamente. A entrada `A2` é amostrada após 2,5 segundos de estabilização. Entre ciclos, o firmware mantém o último resultado. A compilação `uno_r4_wifi` passou com 16.240 bytes de RAM e 75.760 bytes de Flash.
 
 ## Pendências
 
@@ -49,5 +49,6 @@ Gravar `uno_r4_wifi` por USB e conferir o pulso do relé e as leituras dos três
 - [Rotas HTTP das medições](history/2026/2026-11-25-measurement-http-routes.md).
 - [Alimentação temporizada do TDS](history/2026/2026-11-25-tds-power-cycle.md).
 - [Acionamento do relé do TDS](history/2026/2026-11-25-tds-relay-control.md).
+- [Intervalo de teste do TDS](history/2026/2026-11-25-tds-test-interval.md).
 - Código em `src/` e interfaces em `include/`.
 - O histórico local começa com esta reorganização; não representa uma migração completa dos acontecimentos anteriores.

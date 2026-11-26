@@ -38,7 +38,8 @@ constexpr float TDS_MAXIMO = 350.0;
 // --- Temporização e comunicação ---
 constexpr unsigned long VELOCIDADE_SERIAL = 9600;
 constexpr unsigned long INTERVALO_LEITURA_SENSORES_MS = 2000;
-constexpr unsigned long INTERVALO_MEDICAO_TDS_MS = 5UL * 60 * 1000;
+constexpr bool USAR_INTERVALO_TESTE_TDS = true;
+constexpr unsigned long INTERVALO_MEDICAO_TDS_MS = USAR_INTERVALO_TESTE_TDS ? 30000UL : 300000UL;
 constexpr unsigned long DURACAO_ALIMENTACAO_TDS_MS = 3000;
 constexpr unsigned long TEMPO_ESTABILIZACAO_TDS_MS = 2500;
 constexpr unsigned long INTERVALO_PISCA_LENTO_MS = 1000;

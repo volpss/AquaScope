@@ -1,4 +1,4 @@
 - Arrumar a faixa de TDS, que indica que esta baixo (vermelho) e isso eh bom, mas fica apitando no LED
 - COnfigurar certinho os endpoints de cada medicao (assim como fragmentar a chamada unica pra API em uma p/ cada medicao), e arrumar no site
     - TDS: Verificar intervalo e botar no site com timer e ultima atualizacao
-- 
+- Garantir que o TDS nao seja lido com o PH por causa de interferencia num ou outro (talvez fila)
