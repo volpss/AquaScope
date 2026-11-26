@@ -22,6 +22,6 @@ A configuração `WIFI_REDES` contém uma lista JSON de objetos com `nome` e `se
 
 ## Fontes, chats e projetos relacionados
 
-- Fontes locais: [ciclo do firmware completo](src/mainOriginal.cpp), [sketch de bancada de pH](src/main.cpp), [configuração do firmware](include/config.h) e [configuração do PlatformIO](platformio.ini).
+- Fontes locais: [ciclo do firmware completo](src/main.cpp), [sketch de bancada de pH](src/benches/ph-bench.cpp), [configuração do firmware](include/config.h) e [configuração do PlatformIO](platformio.ini).
 - O usuário informou nesta conversa, em 23/11/2026, que o projeto estava funcionando antes da separação em módulos.
 - Não há vínculo externo de chat ou de outro projeto registrado nestes arquivos.

@@ -1,7 +1,7 @@
 #include "data/database.h"
 #include <WiFiS3.h>
-#include "network/clock.h"
 #include "config.h"
+#include "network/clock.h"
 #include "network/connectivity.h"
 #include "private_config.h"
 
@@ -10,19 +10,28 @@ namespace
 WiFiSSLClient clienteSupabase;
 } // namespace
 
-String montarLeituraJson(const LeituraOffline &item)
+String montarMedicaoJson(const MedicaoPendente &medicao)
 {
-  String leituraJson = "{";
-  leituraJson += "\"temperatura\":" + String(item.temperatura, 1) + ",";
-  leituraJson += "\"ph\":" + String(item.ph, 2) + ",";
-  leituraJson += "\"tds\":" + String(item.tds, 0) + ",";
-  leituraJson += "\"alerta_ativo\":" + String(item.alertaAtivo ? "true" : "false");
-  if (item.epochSegundos > EPOCH_MINIMO_VALIDO)
+  String medicaoJson;
+  switch (medicao.tipo)
   {
-    leituraJson += ",\"created_at\":\"" + converterEpochParaIso8601(item.epochSegundos) + "\"";
+    case TipoMedicao::Temperatura:
+      medicaoJson = "{\"temperatura\":" + String(medicao.valor, 1);
+      break;
+    case TipoMedicao::Ph:
+      medicaoJson = "{\"ph\":" + String(medicao.valor, 2);
+      break;
+    case TipoMedicao::Tds:
+      medicaoJson = "{\"tds\":" + String(medicao.valor, 0);
+      break;
   }
-  leituraJson += "}";
-  return leituraJson;
+  medicaoJson += ",\"alerta_ativo\":" + String(medicao.alertaAtivo ? "true" : "false");
+  if (medicao.epochSegundos > EPOCH_MINIMO_VALIDO)
+  {
+    medicaoJson += ",\"created_at\":\"" + converterEpochParaIso8601(medicao.epochSegundos) + "\"";
+  }
+  medicaoJson += "}";
+  return medicaoJson;
 }
 
 bool enviarJsonSupabase(const String &conteudoJson)
@@ -42,28 +51,37 @@ bool enviarJsonSupabase(const String &conteudoJson)
     clienteSupabase.println(conteudoJson.length());
     clienteSupabase.println("Connection: close");
     clienteSupabase.println();
-    clienteSupabase.println(conteudoJson);
+    clienteSupabase.print(conteudoJson);
 
-    bool sucesso = false;
+    int codigoHttp = 0;
     unsigned long inicioEsperaMs = millis();
-    while (clienteSupabase.connected() && millis() - inicioEsperaMs < TIMEOUT_SUPABASE_MS)
+    while (clienteSupabase.connected() && millis() - inicioEsperaMs < TEMPO_LIMITE_SUPABASE_MS)
     {
       if (clienteSupabase.available())
       {
         String resposta = clienteSupabase.readStringUntil('\n');
         resposta.trim();
-        Serial.println(">> Supabase: " + resposta);
-        if (resposta.indexOf("201") >= 0 || resposta.indexOf("200") >= 0)
-        {
-          sucesso = true;
-        }
+        if (resposta.startsWith("HTTP/1."))
+          codigoHttp = resposta.substring(9, 12).toInt();
         break;
       }
     }
     clienteSupabase.stop();
-    return sucesso;
+
+    Serial.print("[SUPABASE] POST ");
+    Serial.print(conteudoJson);
+    if (codigoHttp > 0)
+    {
+      Serial.print(" -> HTTP ");
+      Serial.println(codigoHttp);
+    }
+    else
+    {
+      Serial.println(" -> sem resposta HTTP valida");
+    }
+    return codigoHttp >= 200 && codigoHttp < 300;
   }
 
-  Serial.println(">> Supabase: falha TLS/rede.");
+  Serial.println("[SUPABASE] Falha TLS/rede antes do POST.");
   return false;
 }

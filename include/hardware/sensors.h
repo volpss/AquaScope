@@ -2,9 +2,16 @@
 
 #include "models.h"
 
+struct AtualizacaoSensores
+{
+  bool temperatura = false;
+  bool ph = false;
+  bool tds = false;
+};
+
 void iniciarSensores();
-// Retorna true quando temperatura/pH ou TDS foram atualizados.
-bool atualizarSensores(unsigned long agoraMs);
+AtualizacaoSensores atualizarSensores(unsigned long agoraMs);
 bool medicaoTdsEmAndamento();
+unsigned long obterIdadeLeituraTdsMs(unsigned long agoraMs);
+unsigned long obterTempoAteProximaLeituraTdsMs(unsigned long agoraMs);
 const LeiturasSensores &obterLeituras();
-void publicarLeiturasSensores(bool wifiConectado, uint16_t quantidadeFilaOffline);

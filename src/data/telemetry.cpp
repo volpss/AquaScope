@@ -1,74 +1,47 @@
 #include "data/telemetry.h"
-#include "network/clock.h"
 #include "config.h"
-#include "network/connectivity.h"
 #include "data/database.h"
 #include "data/offline_queue.h"
-#include "hardware/sensors.h"
+#include "network/clock.h"
+#include "network/connectivity.h"
 
-void enviarOuArmazenarLeitura()
+namespace
+{
+unsigned long ultimaTentativaEnvioMs = 0;
+bool tentouEnviar = false;
+
+void registrarMedicao(TipoMedicao tipo, float valor, EstadoSensor estado, uint32_t epochSegundos)
+{
+  if (estado != SENSOR_SEM_LEITURA)
+    enfileirarMedicao({valor, epochSegundos, tipo, estado != SENSOR_NORMAL});
+}
+} // namespace
+
+void registrarMedicoes(AtualizacaoSensores atualizacao)
 {
   const LeiturasSensores &leituras = obterLeituras();
-  if (leituras.estadoTemperatura == SENSOR_SEM_LEITURA ||
-      leituras.estadoPh == SENSOR_SEM_LEITURA ||
-      leituras.estadoTds == SENSOR_SEM_LEITURA)
-  {
-    return;
-  }
+  const uint32_t epochSegundos = obterEpochAtual();
 
-  sincronizarRelogioNtp();
-
-  LeituraOffline atual;
-  atual.temperatura = leituras.temperatura;
-  atual.ph = leituras.ph;
-  atual.tds = leituras.tds;
-  atual.epochSegundos = obterEpochAtual();
-  atual.alertaAtivo = (leituras.estadoTemperatura != SENSOR_NORMAL || leituras.estadoPh != SENSOR_NORMAL || leituras.estadoTds != SENSOR_NORMAL) ? 1 : 0;
-  atual.reservado[0] = atual.reservado[1] = atual.reservado[2] = 0;
-
-  // Sem Wi-Fi, guarda na fila; uma falha de envio também será armazenada.
-  if (!wifiEstaConectado())
-  {
-    salvarNaFilaOffline(atual);
-    return;
-  }
-
-  // Online: envia a leitura ATUAL imediatamente para o dashboard, mesmo com fila antiga pendente
-  String json = montarLeituraJson(atual);
-  if (!enviarJsonSupabase(json))
-  {
-    salvarNaFilaOffline(atual);
-  }
+  if (atualizacao.temperatura)
+    registrarMedicao(TipoMedicao::Temperatura, leituras.temperatura, leituras.estadoTemperatura, epochSegundos);
+  if (atualizacao.ph)
+    registrarMedicao(TipoMedicao::Ph, leituras.ph, leituras.estadoPh, epochSegundos);
+  if (atualizacao.tds)
+    registrarMedicao(TipoMedicao::Tds, leituras.tds, leituras.estadoTds, epochSegundos);
 }
 
-void sincronizarFilaOffline()
+void enviarMedicaoPendente()
 {
-  const uint16_t quantidadeFilaOffline = obterQuantidadeFilaOffline();
-  if (!wifiEstaConectado() || quantidadeFilaOffline == 0)
+  const unsigned long agoraMs = millis();
+  if (!wifiEstaConectado() || obterQuantidadeFilaOffline() == 0 ||
+      (tentouEnviar && agoraMs - ultimaTentativaEnvioMs < INTERVALO_SINCRONIZACAO_FILA_MS))
     return;
 
-  int quantidadeLote = (quantidadeFilaOffline < TAMANHO_LOTE_ENVIO) ? quantidadeFilaOffline : TAMANHO_LOTE_ENVIO;
-  String loteJson;
-  loteJson.reserve(quantidadeLote * 90); // Evita fragmentação de memória ao montar lotes grandes
-  loteJson = "[";
+  const MedicaoPendente &medicao = obterMedicaoFilaOffline(0);
+  if (enviarJsonSupabase(montarMedicaoJson(medicao)))
+    confirmarEnvioFilaOffline(1);
 
-  for (int i = 0; i < quantidadeLote; i++)
-  {
-    if (i > 0)
-      loteJson += ",";
-    loteJson += montarLeituraJson(obterLeituraFilaOffline(i));
-  }
-  loteJson += "]";
-
-  Serial.print(">> [SYNC] Enviando lote de ");
-  Serial.print(quantidadeLote);
-  Serial.println(" registros da RAM...");
-
-  if (enviarJsonSupabase(loteJson))
-  {
-    confirmarEnvioFilaOffline(quantidadeLote);
-
-    Serial.print(">> [SYNC] Lote confirmado! Restantes na RAM: ");
-    Serial.println(obterQuantidadeFilaOffline());
-  }
+  // Deixe o loop retomar a amostragem entre requisições, inclusive após falha.
+  ultimaTentativaEnvioMs = millis();
+  tentouEnviar = true;
 }

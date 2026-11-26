@@ -12,6 +12,7 @@ Consulte `project.md` para identidade, escopo e fontes e `status.md` para a situ
 
 - Mantenha os nomes de arquivos em inglês e os identificadores existentes em português, seguindo o padrão atual.
 - Use pastas correspondentes em `include/` e `src/`: `hardware/` para sensores e indicadores, `network/` para Wi-Fi, HTTP e relógio NTP, e `data/` para banco, fila e telemetria. Restrinja o estado interno ao módulo responsável e preserve `src/main.cpp` como coordenador.
+- Os sketches de bancada ficam em `src/benches/` com ambientes próprios no PlatformIO. Os testes automatizados ficam em `test/`.
 - Nos includes locais, use o caminho a partir de `include/`, como `hardware/sensors.h`.
 - Configurações públicas ficam em `include/config.h`; credenciais e dados privados ficam no `.env`, ignorado pelo Git. Mantenha `.env.example` somente com valores fictícios e não copie credenciais para documentação, logs ou exemplos.
 - O hook `scripts/load_env.py` gera `private_config.h` dentro de `.pio/` antes da compilação. Não versione o cabeçalho gerado. Valide alterações nesse carregamento com `python -m unittest discover -s test -p test_env_config.py` e com a compilação do firmware.

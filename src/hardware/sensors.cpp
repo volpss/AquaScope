@@ -5,25 +5,32 @@
 
 namespace
 {
-  constexpr int ADC_MAXIMO = (1 << RESOLUCAO_ADC) - 1;
-  constexpr int TOTAL_AMOSTRAS = 30;
-  constexpr int DESCARTE_POR_EXTREMO = 5;
-  constexpr unsigned long INTERVALO_AMOSTRA_MS = 10;
   static_assert(TEMPO_ESTABILIZACAO_TDS_MS + (TOTAL_AMOSTRAS - 1) * INTERVALO_AMOSTRA_MS <
                     DURACAO_ALIMENTACAO_TDS_MS,
                 "As amostras de TDS precisam caber no pulso de alimentacao");
 
+  struct JanelaAmostragem
+  {
+    unsigned long intervaloMs;
+    unsigned long inicioMs = 0;
+    unsigned long ultimaAmostraMs = 0;
+    int total = 0;
+  };
+
   LeiturasSensores leituras;
-  int amostrasPh[TOTAL_AMOSTRAS];
-  int amostrasTds[TOTAL_AMOSTRAS];
+
+  JanelaAmostragem janelaTemperatura{INTERVALO_MEDICAO_TEMPERATURA_MS};
   int somaAdcTemperatura = 0;
-  int totalColetado = 0;
-  unsigned long inicioJanelaMs = 0;
-  unsigned long ultimaAmostraMs = 0;
+
+  JanelaAmostragem janelaPh{INTERVALO_MEDICAO_PH_MS};
+  int amostrasPh[TOTAL_AMOSTRAS];
+
+  int amostrasTds[TOTAL_AMOSTRAS];
   bool iniciouCicloTds = false;
   bool tdsEnergizado = false;
   int totalAmostrasTds = 0;
   unsigned long inicioCicloTdsMs = 0;
+  unsigned long ultimaLeituraTdsMs = 0;
   unsigned long ultimaAmostraTdsMs = 0;
 
   float calcularTemperatura(float mediaAdc)
@@ -44,7 +51,6 @@ namespace
     for (int i = DESCARTE_POR_EXTREMO; i < TOTAL_AMOSTRAS - DESCARTE_POR_EXTREMO; ++i)
       soma += amostras[i];
 
-    constexpr int AMOSTRAS_CENTRAIS = TOTAL_AMOSTRAS - 2 * DESCARTE_POR_EXTREMO;
     const float mediaAdc = static_cast<float>(soma) / AMOSTRAS_CENTRAIS;
     return mediaAdc * TENSAO_REFERENCIA_ADC / ADC_MAXIMO;
   }
@@ -83,9 +89,42 @@ namespace
     return SENSOR_NORMAL;
   }
 
+  void publicarMedicao(const char *sensor, float valor, EstadoSensor estado, int casasDecimais,
+                       const char *unidade, const char *abaixo, const char *acima)
+  {
+    Serial.print("[MEDICAO] ");
+    Serial.print(sensor);
+    Serial.print(": ");
+    if (estado == SENSOR_SEM_LEITURA)
+    {
+      Serial.println("ERRO");
+      return;
+    }
+
+    Serial.print(valor, casasDecimais);
+    Serial.print(unidade);
+    Serial.print(" [");
+    if (estado == SENSOR_ABAIXO_LIMITE)
+      Serial.print(abaixo);
+    else if (estado == SENSOR_ACIMA_LIMITE)
+      Serial.print(acima);
+    else
+      Serial.print("OK");
+    Serial.println("]");
+  }
+
   void desligarAlimentacaoTds()
   {
     digitalWrite(PINO_ALIMENTACAO_TDS, HIGH);
+  }
+
+  void reiniciarJanelaInterrompida(JanelaAmostragem &janela, unsigned long agoraMs)
+  {
+    if (janela.total == 0)
+      return;
+
+    janela.total = 0;
+    janela.inicioMs = agoraMs - janela.intervaloMs;
   }
 
   void iniciarCicloTds()
@@ -93,8 +132,10 @@ namespace
     iniciouCicloTds = true;
     tdsEnergizado = true;
     totalAmostrasTds = 0;
-    // Descarte a janela parcialmente coletada para ler pH com o TDS desligado.
-    totalColetado = 0;
+    // Descarte as amostras parciais e retome as janelas depois do pulso.
+    const unsigned long agoraMs = millis();
+    reiniciarJanelaInterrompida(janelaTemperatura, agoraMs);
+    reiniciarJanelaInterrompida(janelaPh, agoraMs);
     somaAdcTemperatura = 0;
     digitalWrite(PINO_ALIMENTACAO_TDS, LOW);
     inicioCicloTdsMs = millis();
@@ -107,12 +148,12 @@ namespace
     {
       desligarAlimentacaoTds();
       tdsEnergizado = false;
-      inicioJanelaMs = agoraMs - INTERVALO_LEITURA_SENSORES_MS;
       leituras.tds = totalAmostrasTds == TOTAL_AMOSTRAS
                          ? calcularTds(calcularTensaoFiltrada(amostrasTds), leituras.temperatura)
                          : LEITURA_INVALIDA;
       leituras.estadoTds = classificarLeitura(leituras.tds, TDS_MINIMO, TDS_MAXIMO);
-      Serial.println(">> TDS: ciclo concluido");
+      ultimaLeituraTdsMs = agoraMs;
+      publicarMedicao("TDS", leituras.tds, leituras.estadoTds, 0, " ppm", "BAIXO", "ALTO");
       return true;
     }
 
@@ -126,25 +167,52 @@ namespace
     return false;
   }
 
-  void publicarLeitura(float valor, EstadoSensor estado, int casasDecimais,
-                       const char *unidade, const char *abaixo, const char *acima)
+  bool prepararAmostra(JanelaAmostragem &janela, unsigned long agoraMs)
   {
-    if (estado == SENSOR_SEM_LEITURA)
+    if (janela.total == 0)
     {
-      Serial.print("ERRO");
-      return;
+      if (agoraMs - janela.inicioMs < janela.intervaloMs)
+        return false;
+      janela.inicioMs = agoraMs;
+    }
+    else if (agoraMs - janela.ultimaAmostraMs < INTERVALO_AMOSTRA_MS)
+    {
+      return false;
     }
 
-    Serial.print(valor, casasDecimais);
-    Serial.print(unidade);
-    Serial.print(" [");
-    if (estado == SENSOR_ABAIXO_LIMITE)
-      Serial.print(abaixo);
-    else if (estado == SENSOR_ACIMA_LIMITE)
-      Serial.print(acima);
-    else
-      Serial.print("OK");
-    Serial.print("]");
+    janela.ultimaAmostraMs = agoraMs;
+    return true;
+  }
+
+  bool atualizarTemperatura(unsigned long agoraMs)
+  {
+    if (!prepararAmostra(janelaTemperatura, agoraMs))
+      return false;
+
+    somaAdcTemperatura += analogRead(PINO_TEMPERATURA);
+    if (++janelaTemperatura.total < TOTAL_AMOSTRAS)
+      return false;
+
+    leituras.temperatura = calcularTemperatura(static_cast<float>(somaAdcTemperatura) / TOTAL_AMOSTRAS);
+    leituras.estadoTemperatura = classificarLeitura(leituras.temperatura, TEMPERATURA_MINIMA, TEMPERATURA_MAXIMA);
+    janelaTemperatura.total = 0;
+    somaAdcTemperatura = 0;
+    return true;
+  }
+
+  bool atualizarPh(unsigned long agoraMs)
+  {
+    if (!prepararAmostra(janelaPh, agoraMs))
+      return false;
+
+    amostrasPh[janelaPh.total++] = analogRead(PINO_PH);
+    if (janelaPh.total < TOTAL_AMOSTRAS)
+      return false;
+
+    leituras.ph = calcularPh(calcularTensaoFiltrada(amostrasPh));
+    leituras.estadoPh = classificarLeitura(leituras.ph, PH_MINIMO, PH_MAXIMO);
+    janelaPh.total = 0;
+    return true;
   }
 } // namespace
 
@@ -154,49 +222,33 @@ void iniciarSensores()
   R_IOPORT_PinCfg(nullptr, digitalPinToBspPin(PINO_ALIMENTACAO_TDS),
                  IOPORT_CFG_PORT_DIRECTION_OUTPUT | IOPORT_CFG_PORT_OUTPUT_HIGH);
   analogReadResolution(RESOLUCAO_ADC);
-  // A primeira janela começa na primeira passagem pelo loop.
-  inicioJanelaMs = millis() - INTERVALO_LEITURA_SENSORES_MS;
+  // As primeiras janelas começam na primeira passagem pelo loop.
+  const unsigned long agoraMs = millis();
+  janelaTemperatura.inicioMs = agoraMs - janelaTemperatura.intervaloMs;
+  janelaPh.inicioMs = agoraMs - janelaPh.intervaloMs;
 }
 
-bool atualizarSensores(unsigned long agoraMs)
+AtualizacaoSensores atualizarSensores(unsigned long agoraMs)
 {
   if (tdsEnergizado)
-    return atualizarCicloTds(agoraMs);
+    return {false, false, atualizarCicloTds(agoraMs)};
 
   if (iniciouCicloTds && agoraMs - inicioCicloTdsMs >= INTERVALO_MEDICAO_TDS_MS)
   {
     iniciarCicloTds();
-    return false;
+    return {};
   }
 
-  if (totalColetado == 0)
-  {
-    if (agoraMs - inicioJanelaMs < INTERVALO_LEITURA_SENSORES_MS)
-      return false;
-    inicioJanelaMs = agoraMs;
-  }
-  else if (agoraMs - ultimaAmostraMs < INTERVALO_AMOSTRA_MS)
-  {
-    return false;
-  }
+  const bool temperaturaAtualizada = atualizarTemperatura(agoraMs);
+  const bool phAtualizado = atualizarPh(agoraMs);
+  if (temperaturaAtualizada)
+    publicarMedicao("Temperatura", leituras.temperatura, leituras.estadoTemperatura, 1, " °C", "BAIXA", "ALTA");
+  if (phAtualizado)
+    publicarMedicao("pH", leituras.ph, leituras.estadoPh, 2, "", "ACIDO", "ALCALINO");
 
-  ultimaAmostraMs = agoraMs;
-  somaAdcTemperatura += analogRead(PINO_TEMPERATURA);
-  amostrasPh[totalColetado] = analogRead(PINO_PH);
-  ++totalColetado;
-  if (totalColetado < TOTAL_AMOSTRAS)
-    return false;
-
-  leituras.temperatura = calcularTemperatura(static_cast<float>(somaAdcTemperatura) / TOTAL_AMOSTRAS);
-  leituras.ph = calcularPh(calcularTensaoFiltrada(amostrasPh));
-  leituras.estadoTemperatura = classificarLeitura(leituras.temperatura, TEMPERATURA_MINIMA, TEMPERATURA_MAXIMA);
-  leituras.estadoPh = classificarLeitura(leituras.ph, PH_MINIMO, PH_MAXIMO);
-
-  totalColetado = 0;
-  somaAdcTemperatura = 0;
-  if (!iniciouCicloTds)
+  if (!iniciouCicloTds && temperaturaAtualizada)
     iniciarCicloTds();
-  return true;
+  return {temperaturaAtualizada, phAtualizado, false};
 }
 
 bool medicaoTdsEmAndamento()
@@ -204,29 +256,26 @@ bool medicaoTdsEmAndamento()
   return tdsEnergizado;
 }
 
+unsigned long obterIdadeLeituraTdsMs(unsigned long agoraMs)
+{
+  return agoraMs - ultimaLeituraTdsMs;
+}
+
+unsigned long obterTempoAteProximaLeituraTdsMs(unsigned long agoraMs)
+{
+  if (!iniciouCicloTds)
+    return DURACAO_ALIMENTACAO_TDS_MS;
+
+  const unsigned long decorridoMs = agoraMs - inicioCicloTdsMs;
+  if (tdsEnergizado)
+    return decorridoMs < DURACAO_ALIMENTACAO_TDS_MS ? DURACAO_ALIMENTACAO_TDS_MS - decorridoMs : 0;
+
+  const unsigned long ateInicioMs = decorridoMs < INTERVALO_MEDICAO_TDS_MS
+                                        ? INTERVALO_MEDICAO_TDS_MS - decorridoMs : 0;
+  return ateInicioMs + DURACAO_ALIMENTACAO_TDS_MS;
+}
+
 const LeiturasSensores &obterLeituras()
 {
   return leituras;
-}
-
-void publicarLeiturasSensores(bool wifiConectado, uint16_t quantidadeFilaOffline)
-{
-  if (wifiConectado)
-  {
-    Serial.print("[ONLINE] ");
-  }
-  else
-  {
-    Serial.print("[OFFLINE - RAM: ");
-    Serial.print(quantidadeFilaOffline);
-    Serial.print("] ");
-  }
-
-  Serial.print("Temp: ");
-  publicarLeitura(leituras.temperatura, leituras.estadoTemperatura, 1, " °C", "BAIXA", "ALTA");
-  Serial.print(" | pH: ");
-  publicarLeitura(leituras.ph, leituras.estadoPh, 2, "", "ACIDO", "ALCALINO");
-  Serial.print(" | TDS: ");
-  publicarLeitura(leituras.tds, leituras.estadoTds, 0, " ppm", "BAIXO", "ALTO");
-  Serial.println();
 }

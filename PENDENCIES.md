@@ -1,4 +1,9 @@
-- Arrumar a faixa de TDS, que indica que esta baixo (vermelho) e isso eh bom, mas fica apitando no LED
-- COnfigurar certinho os endpoints de cada medicao (assim como fragmentar a chamada unica pra API em uma p/ cada medicao), e arrumar no site
-    - TDS: Verificar intervalo e botar no site com timer e ultima atualizacao
-- Garantir que o TDS nao seja lido com o PH por causa de interferencia num ou outro (talvez fila)
+- [x] Ajustar provisoriamente a faixa de alerta do TDS para 0 a 350 ppm. Compilado. Falta conferir o LED e o buzzer na placa.
+- [ ] Calibrar a sonda de TDS, identificar as espécies do aquário e revisar os limites de alerta conforme os parâmetros de água dessas espécies.
+- [x] Atualizar a página local por meio das rotas individuais de temperatura, pH e TDS.
+  - [x] Exibir o horário da última leitura do TDS e a contagem regressiva calculada a partir do intervalo configurado no firmware.
+  - [ ] Após o upload, conferir as três rotas, os cartões e a contagem do TDS na rede local.
+- [ ] Validar interferência na placa. Comparar o pH com o TDS desligado e logo após cada pulso. Comparar também o TDS com o módulo de pH ligado e desligado.
+- [x] Alterar o firmware para enviar uma medição por POST ao Supabase, com intervalos independentes.
+- [x] Configurar as cadências de medição e envio para temperatura (3 s), pH (45 s) e TDS (15 min, modo normal).
+- [ ] Conferir ou ajustar a tabela do Supabase para receber medições individuais. Após o upload, validar as três cadências na placa, a recuperação da fila e as consultas de eventual painel externo.

@@ -1,6 +1,7 @@
 #pragma once
 
 
-// Coordena o envio da leitura atual e a sincronização dos registros offline.
-void enviarOuArmazenarLeitura();
-void sincronizarFilaOffline();
+#include "hardware/sensors.h"
+
+void registrarMedicoes(AtualizacaoSensores atualizacao);
+void enviarMedicaoPendente();

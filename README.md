@@ -6,12 +6,13 @@ Projeto acadêmico de monitoramento de aquário com Arduino Uno R4 WiFi, framewo
 
 Os arquivos `.h` em `include/` declaram as interfaces dos módulos. Os arquivos `.cpp` em `src/` implementam essas interfaces. O PlatformIO compila os fontes dessa pasta automaticamente; não é necessário incluir um `.cpp` em outro nem alterar o `platformio.ini` ao adicionar um módulo.
 
-As subpastas agrupam os módulos por área e são espelhadas em `include/`:
+Os módulos de `hardware/`, `network/` e `data/` têm interfaces nas pastas correspondentes em `include/`.
 
 ```text
 src/
 ├── main.cpp
-├── mainOriginal.cpp
+├── benches/
+│   └── ph-bench.cpp
 ├── hardware/
 │   ├── sensors.cpp
 │   ├── indicators.cpp
@@ -26,16 +27,16 @@ src/
     └── telemetry.cpp
 ```
 
-`hardware/` reúne a interação com os componentes físicos; `network/`, os serviços de rede e o relógio sincronizado por NTP; `data/`, o armazenamento e o envio das leituras. As configurações e os modelos compartilhados permanecem em `include/config.h` e `include/models.h`.
+Os sketches de bancada ficam em `src/benches/`, com ambientes próprios no PlatformIO. Os testes automatizados ficam em `test/`. As configurações compartilhadas ficam agrupadas em `include/config.h` por sensor ou responsabilidade, e os modelos de leitura e de telemetria ficam em `include/models.h`.
 
 | Arquivo | Responsabilidade |
 | --- | --- |
-| [src/mainOriginal.cpp](src/mainOriginal.cpp) | Inicialização e ciclo do firmware completo no ambiente `uno_r4_wifi`. |
-| [src/main.cpp](src/main.cpp) | Sketch de bancada de pH no ambiente `uno_r4_wifi_ph`. |
+| [src/main.cpp](src/main.cpp) | Inicialização e ciclo do firmware completo no ambiente padrão `uno_r4_wifi`. |
+| [src/benches/ph-bench.cpp](src/benches/ph-bench.cpp) | Sketch de bancada de pH no ambiente `uno_r4_wifi_ph`. |
 | [include/config.h](include/config.h) | Pinos, limites e intervalos. |
 | [.env.example](.env.example) | Exemplo das variáveis privadas para configurar no `.env` local. |
 | [scripts/load_env.py](scripts/load_env.py) | Hook de compilação que carrega o `.env` e disponibiliza o cabeçalho privado. |
-| [include/models.h](include/models.h) | Estruturas de leitura e estados dos sensores. |
+| [include/models.h](include/models.h) | Estados dos sensores, leituras atuais e medições pendentes. |
 | [src/hardware/sensors.cpp](src/hardware/sensors.cpp) | Amostragem, filtragem e conversão dos sensores, com controle de alimentação do TDS. |
 | [src/hardware/indicators.cpp](src/hardware/indicators.cpp) | LEDs, buzzer, botão e silêncio temporário do alarme. |
 | [src/hardware/led_matrix.cpp](src/hardware/led_matrix.cpp) | Peixe na matriz de LEDs integrada de 12 × 8. |
@@ -43,7 +44,7 @@ src/
 | [src/network/clock.cpp](src/network/clock.cpp) | NTP, manutenção do horário durante quedas e formatação de datas. |
 | [src/data/database.cpp](src/data/database.cpp) | JSON e envio HTTPS à API REST do Supabase. |
 | [src/data/offline_queue.cpp](src/data/offline_queue.cpp) | Fila circular de leituras em RAM. |
-| [src/data/telemetry.cpp](src/data/telemetry.cpp) | Envio da leitura atual, armazenamento em caso de falha e sincronização da fila. |
+| [src/data/telemetry.cpp](src/data/telemetry.cpp) | Registro de novas medições na fila e envio individual ao Supabase. |
 | [src/network/web_server.cpp](src/network/web_server.cpp) | Página HTTP local e rotas JSON das medições. |
 
 Cada módulo tem seu cabeçalho de mesmo nome na subpasta correspondente de `include/`. Por exemplo, `src/hardware/sensors.cpp` usa `include/hardware/sensors.h`, referenciado com `#include "hardware/sensors.h"`. As variáveis internas ficam restritas ao respectivo `.cpp`; os outros módulos acessam funções declaradas no `.h`. As leituras dos sensores são expostas por uma referência somente para leitura.
@@ -52,11 +53,11 @@ Cada módulo tem seu cabeçalho de mesmo nome na subpasta correspondente de `inc
 
 ## Funcionamento atual
 
-O ciclo principal atende Wi-Fi, OTA, página local e alarmes. A cada 2 segundos, inicia uma janela de 30 amostras de temperatura e pH, com pelo menos 10 ms entre elas. O TDS tem um intervalo próprio, descrito abaixo. A cada 15 segundos, tenta enviar o conjunto mais recente se os três canais estiverem válidos. Sem conexão ou se o envio falhar, o conjunto entra na fila offline.
+O ciclo principal atende Wi-Fi, OTA, página local e alarmes. Temperatura e pH usam janelas independentes de 30 amostras, com pelo menos 10 ms entre amostras do mesmo sensor. O firmware inicia uma janela de temperatura a cada 3 segundos e uma de pH a cada 45 segundos. As duas coletas pausam durante o pulso do TDS e reiniciam as janelas interrompidas depois do pulso.
 
 Na inicialização, a matriz integrada exibe um peixe estático. O desenho fica em `desenhoPeixe`, no módulo `hardware/led_matrix.cpp`: cada `1` acende um LED e cada `0` o apaga. A biblioteca `Arduino_LED_Matrix` já acompanha o framework da placa; não há dependência adicional no `platformio.ini` nem chamadas extras no `loop()`.
 
-A fila comporta 400 registros e sobrescreve o mais antigo quando cheia. Com conexão, o programa tenta sincronizar até 50 registros por lote, em intervalos de pelo menos 1 segundo, removendo-os somente após a confirmação do envio. Requisições de rede podem prolongar esses intervalos.
+A fila comporta 400 medições individuais e sobrescreve a mais antiga quando cheia. Com conexão, o programa envia da mais antiga para a mais recente e aguarda pelo menos um segundo após cada tentativa. Uma medição permanece na fila até o Supabase confirmar o envio.
 
 A fila fica apenas na RAM: desligar ou reiniciar a placa perde os registros pendentes.
 
@@ -85,15 +86,15 @@ A ligação direta entre `D7` e `VCC` do TDS pode ultrapassar o [limite de 8 mA 
 
 O firmware configura `D7` como saída em `HIGH` para manter o relé desligado. Durante a medição, comanda o relé com `LOW`. O primeiro pulso ocorre após a primeira leitura de temperatura e pH. Os pulsos seguintes são agendados por `millis()`, inclusive sem Wi-Fi. Em cada pulso, o firmware aguarda 2,5 segundos, coleta 30 amostras em `A2` e desliga aos 3 segundos. O atendimento de rede e as leituras de pH aguardam o fim do pulso.
 
-Para o teste, `USAR_INTERVALO_TESTE_TDS` está em `true` em [include/config.h](include/config.h), com um pulso a cada 30 segundos. Ao terminar, ajuste a opção para `false` e grave o firmware novamente para voltar ao intervalo de 5 minutos.
+O modo normal está ativo com `USAR_INTERVALO_TESTE_TDS` em `false` em [include/config.h](include/config.h). O primeiro pulso começa após a primeira leitura de temperatura e os seguintes são agendados a cada 15 minutos. Para testar a comutação a cada 30 segundos, use `true` temporariamente e grave o firmware.
 
-O Monitor Serial mostra `TDS: ciclo concluido` a cada pulso. Entre pulsos, a página, a API e a telemetria mostram o último resultado de TDS. Confira com um multímetro se o `VCC` do módulo sobe para perto de `5V` durante o pulso e cai depois.
+O Monitor Serial mostra uma linha `[MEDICAO] TDS` ao concluir cada pulso. Entre pulsos, a página e a API mantêm o último resultado de TDS. Confira com um multímetro se o `VCC` do módulo sobe para perto de `5V` durante o pulso e cai depois.
 
 Para conferir a precisão, coloque a sonda e o NTC na mesma solução de referência de [707 ppm a 25 °C](https://wiki.dfrobot.com/sen0244/docs/20304) e aguarde um ciclo. Se a leitura estiver estável e precisar de correção, ajuste `FATOR_CALIBRACAO_TDS` em [include/config.h](include/config.h) para `707 / valor exibido` a partir do fator inicial `1.0`. Grave novamente e confira o resultado na mesma solução.
 
 ### API HTTP local
 
-Use o IP da placa mostrado no Monitor Serial. A rota `GET /` abre a página HTML. Cada rota abaixo retorna a leitura mais recente do seu sensor em JSON.
+Use o IP da placa mostrado no Monitor Serial. A rota `GET /` abre a página HTML. A página consulta as rotas abaixo em sequência, com uma pausa de três segundos entre rodadas, e atualiza cada cartão na própria página.
 
 | Rota | Medição | Unidade |
 | --- | --- | --- |
@@ -108,6 +109,30 @@ Exemplo de resposta de `GET /api/temperatura`:
 ```
 
 O campo `estado` pode ser `normal`, `abaixo_limite`, `acima_limite` ou `sem_leitura`. A rota retorna HTTP `503` e `"valor":null` quando a medição não está disponível. Os limites de alerta não impedem a consulta de valores válidos.
+
+`GET /api/tds` também retorna `idade_ms` (idade da leitura em milissegundos, ou `null` quando indisponível), `intervalo_ms` (intervalo configurado entre inícios de ciclo) e `proxima_em_ms` (tempo estimado até o fim do próximo pulso). A página usa o relógio do navegador e a idade da leitura para exibir o horário da última atualização. A contagem regressiva pode chegar a zero enquanto a placa conclui o ciclo ou atende outra tarefa.
+
+`GET /api/fila` retorna a quantidade atual de registros pendentes na RAM no campo `pendentes`.
+
+### Envio ao Supabase
+
+Cada leitura válida entra na fila assim que é concluída, na cadência de 3 segundos para temperatura, 45 segundos para pH e 15 minutos para TDS no modo normal. Os intervalos ficam em [include/config.h](include/config.h). O ciclo do TDS e o atendimento de rede podem atrasar a amostragem. Uma fila acumulada ou uma falha de conexão pode adiar a entrega ao Supabase.
+
+O Monitor Serial registra uma linha `[MEDICAO]` por leitura concluída, com o valor ou erro do sensor. A linha `[SUPABASE] POST` mostra o JSON usado como corpo da requisição e o código HTTP retornado. Uma falha de conexão antes do POST ou a falta de uma resposta HTTP aparece como mensagem de falha.
+
+Cada POST para `SUPABASE_CAMINHO` contém um objeto com o campo do sensor, seu `alerta_ativo` e `created_at` quando o horário da placa é conhecido. Antes do upload, confira se a tabela aceita linhas com apenas uma das três colunas de medição preenchida. Se for preciso ajustar a tabela, substitua `sua_tabela` pelo nome usado em `SUPABASE_CAMINHO` e execute no SQL Editor do Supabase.
+
+```sql
+alter table public.sua_tabela
+  alter column temperatura drop not null,
+  alter column temperatura drop default,
+  alter column ph drop not null,
+  alter column ph drop default,
+  alter column tds drop not null,
+  alter column tds drop default;
+```
+
+O ajuste preserva as linhas antigas. Se houver outras restrições de inserção ou políticas RLS na tabela, confira se permitem o mesmo formato. Para consultar o último valor de cada sensor em um painel externo, filtre a coluna correspondente por valores preenchidos antes de ordenar por `created_at`. Assim, as consultas incluem tanto as linhas antigas com três valores quanto as novas linhas individuais.
 
 ## Compilar e enviar
 
@@ -151,7 +176,7 @@ pio device monitor
 
 O serviço OTA foi mantido no firmware; o envio pelo PlatformIO está preparado para USB. A compilação não comprova que uma atualização por Wi-Fi foi realizada.
 
-Para conferir a organização na placa, faça Upload e confira as leituras, a página local e o envio ao Supabase. Depois interrompa o Wi-Fi sem reiniciar a placa, observe o aumento da fila no Monitor e restaure a conexão para conferir o envio dos registros pendentes.
+Para conferir a organização na placa, faça Upload e confira as leituras, a página local e o envio ao Supabase. Depois interrompa o Wi-Fi sem reiniciar a placa, aguarde novas medições e restaure a conexão para conferir os POSTs dos registros pendentes no Monitor Serial.
 
 Os testes do carregador podem ser executados sem conectar a placa:
 

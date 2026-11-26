@@ -1,55 +1,54 @@
 #include <Arduino.h>
 
-constexpr int PINO_PH = A1;
-constexpr int AMOSTRAS = 30;
+#include "config.h"
+#include "data/telemetry.h"
+#include "hardware/indicators.h"
+#include "hardware/led_matrix.h"
+#include "hardware/sensors.h"
+#include "network/connectivity.h"
+#include "network/web_server.h"
+
+namespace
+{
+  bool primeiraLeituraConcluida = false;
+} // namespace
 
 void setup()
 {
-  Serial.begin(9600);
-  analogReadResolution(10); // 0 a 1023
-  delay(1000);
+  Serial.begin(VELOCIDADE_SERIAL);
+  iniciarSensores();
+  iniciarIndicadores();
+  iniciarMatrizLed();
 
-  Serial.println("Leitura de tensao do modulo de pH em A1");
+  Serial.println("=== Sistema IoT Aquario Iniciado (Buffer RAM) ===");
+  iniciarConectividade();
 }
 
 void loop()
 {
-  int leituras[AMOSTRAS];
+  const unsigned long agoraMs = millis();
 
-  for (int i = 0; i < AMOSTRAS; i++)
+  const AtualizacaoSensores atualizacao = atualizarSensores(agoraMs);
+  const bool leiturasAtualizadas = atualizacao.temperatura || atualizacao.ph || atualizacao.tds;
+  if (leiturasAtualizadas)
   {
-    leituras[i] = analogRead(PINO_PH);
-    delay(10);
+    registrarMedicoes(atualizacao);
+    primeiraLeituraConcluida = true;
   }
 
-  // Ordena as amostras para remover as 5 menores e as 5 maiores.
-  for (int i = 0; i < AMOSTRAS - 1; i++)
+  // Wi-Fi, HTTP e telemetria podem bloquear por mais que o pulso de TDS.
+  if (medicaoTdsEmAndamento())
+    return;
+
+  gerenciarWifi();
+  processarOta();
+  atenderNavegador();
+
+  if (primeiraLeituraConcluida)
   {
-    for (int j = i + 1; j < AMOSTRAS; j++)
-    {
-      if (leituras[j] < leituras[i])
-      {
-        int temporaria = leituras[i];
-        leituras[i] = leituras[j];
-        leituras[j] = temporaria;
-      }
-    }
+    atualizarIndicadores(agoraMs);
+    gerenciarAlarme(agoraMs);
   }
 
-  long soma = 0;
-  for (int i = 5; i < AMOSTRAS - 5; i++)
-  {
-    soma += leituras[i];
-  }
-
-  float mediaADC = soma / 20.0;
-  float tensao = mediaADC * (5.0 / 1023.0);
-
-  Serial.print("ADC medio: ");
-  Serial.print(mediaADC, 1);
-  Serial.print(" | Tensao: ");
-  Serial.print(tensao, 3);
-  Serial.println(" V");
-
-  delay(1000);
+  enviarMedicaoPendente();
 }

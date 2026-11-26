@@ -1,6 +1,6 @@
 # Situação atual — Aquario IoT
 
-Atualização: 2026-11-25 (America/Sao_Paulo).
+Atualização: 2026-11-26 (America/Sao_Paulo).
 
 ## Situação confirmada
 
@@ -14,13 +14,21 @@ As configurações privadas de Wi-Fi, OTA e Supabase ficam no `.env`, mantendo o
 
 O firmware percorre as redes em ordem, com intervalo de 15 segundos após cada tentativa. Ao perder uma conexão estabelecida, tenta recuperar a mesma rede antes de alternar. A retomada circular e a conexão em redes diferentes ainda precisam de validação na placa.
 
-O ambiente `uno_r4_wifi_ph` usa `main.cpp` para conferir a tensão estimada de `PO` em `A1`. O usuário confirmou o ajuste de 2,50 V com o BNC em curto e optou por adiar a calibração da sonda em soluções tampão.
+O ambiente `uno_r4_wifi_ph` usa `src/benches/ph-bench.cpp` para conferir a tensão estimada de `PO` em `A1`. O sketch compartilha as constantes de aquisição com o firmware em `include/config.h`, agora organizado por sensor e serviço. O usuário confirmou o ajuste de 2,50 V com o BNC em curto e optou por adiar a calibração da sonda em soluções tampão.
 
-O ambiente padrão `uno_r4_wifi` usa `mainOriginal.cpp`. O firmware lê a temperatura em `A0`, o pH em `A1` e o TDS em `A2`. As leituras de pH usam a inclinação provisória de −5,70 pH/V. O TDS usa compensação pela temperatura lida em `A0`. Os dois ambientes compilaram para o Uno R4 WiFi. O firmware completo usou 16.220 bytes de RAM e 74.416 bytes de Flash.
+O ambiente padrão `uno_r4_wifi` usa `src/main.cpp` como ponto de entrada. O firmware lê a temperatura em `A0`, o pH em `A1` e o TDS em `A2`. As leituras de pH usam a inclinação provisória de −5,70 pH/V. O TDS usa compensação pela temperatura lida em `A0`. Os dois ambientes compilaram após a troca dos arquivos.
 
-O servidor HTTP local oferece as rotas JSON `GET /api/temperatura`, `GET /api/ph` e `GET /api/tds`. A compilação com as novas rotas passou no ambiente `uno_r4_wifi`.
+O servidor HTTP local oferece as rotas JSON `GET /api/temperatura`, `GET /api/ph` e `GET /api/tds`. A página consulta cada medição separadamente e usa os campos de tempo da rota de TDS para mostrar a última leitura e a previsão da próxima. A rota `GET /api/fila` atualiza o contador de registros pendentes. A compilação passou no ambiente `uno_r4_wifi`.
 
-O usuário informou que montou a alimentação do TDS com relé. O firmware configura `D7` como saída em `HIGH` e aciona o relé em `LOW` por 3 segundos. O intervalo de teste está ativo em `USAR_INTERVALO_TESTE_TDS` e agenda um ciclo a cada 30 segundos. O intervalo normal de 5 minutos volta quando a opção estiver em `false` e o firmware for gravado novamente. A entrada `A2` é amostrada após 2,5 segundos de estabilização. Entre ciclos, o firmware mantém o último resultado. A compilação `uno_r4_wifi` passou com 16.240 bytes de RAM e 75.760 bytes de Flash.
+O firmware mede temperatura a cada 3 segundos, pH a cada 45 segundos e TDS a cada 15 minutos no modo normal. Cada nova leitura válida entra na fila em RAM para envio em um POST individual ao Supabase. A fila comporta 400 medições e remove cada item após confirmar o envio. A compilação passou no ambiente `uno_r4_wifi`.
+
+O Monitor Serial registra somente os sensores que acabaram de concluir uma medição, além dos eventos de operação. Cada POST registra o corpo JSON e o resultado HTTP. A compilação passou e a conferência dos logs na placa está pendente.
+
+O usuário informou que montou a alimentação do TDS com relé. O firmware configura `D7` como saída em `HIGH` e aciona o relé em `LOW` por 3 segundos. `USAR_INTERVALO_TESTE_TDS` está em `false`. A entrada `A2` é amostrada após 2,5 segundos de estabilização. Temperatura e pH pausam durante o pulso. Entre ciclos, o firmware mantém o último resultado de TDS.
+
+O firmware usa a faixa provisória de 0 a 350 ppm, inclusive, para o alarme de TDS. O limite inferior anterior era 150 ppm. A alteração compilou no ambiente `uno_r4_wifi`.
+
+A faixa de temperatura considerada normal pelo firmware passou a ser de 23 °C a 28 °C, inclusive. A alteração compilou no ambiente `uno_r4_wifi`.
 
 ## Pendências
 
@@ -29,13 +37,16 @@ O usuário informou que montou a alimentação do TDS com relé. O firmware conf
 - Validar a alternância Wi-Fi com duas redes configuradas, a primeira indisponível e posterior queda da rede conectada.
 - A fila permanece em RAM e perde os registros após reinicialização.
 - Validar os três sensores juntos na placa e calibrar a sonda de pH em solução tampão quando possível.
-- Após gravar o firmware, conferir a comutação do relé, medir o pulso no `+` do módulo e verificar a estabilidade da leitura do TDS.
-- Após o upload, consultar as três rotas HTTP a partir de um dispositivo na mesma rede.
+- Comparar o pH com o TDS desligado e logo após cada pulso. Comparar também o TDS com o módulo de pH ligado e desligado.
+- Após gravar o firmware, conferir a comutação do relé, medir o pulso no `+` do módulo, verificar a estabilidade do TDS e confirmar o LED e o buzzer com leituras abaixo de 150 ppm e os outros sensores em condições normais.
+- Calibrar a sonda de TDS, identificar as espécies do aquário e revisar os limites de alerta conforme os parâmetros de água dessas espécies.
+- Após o upload, consultar as três rotas HTTP, conferir a atualização dos cartões e verificar a contagem do TDS na rede local.
+- Conferir se a tabela do Supabase aceita as medições individuais antes do upload. Validar na placa as cadências de 3 s, 45 s e 15 min, a recuperação da fila e as consultas de eventual painel externo.
 - O serviço OTA foi preservado, mas o upload via Wi-Fi pelo PlatformIO não foi configurado ou verificado nesta reorganização.
 
 ## Próximo passo
 
-Gravar `uno_r4_wifi` por USB e conferir o pulso do relé e as leituras dos três sensores no Monitor Serial a 9600 baud.
+Conferir a tabela do Supabase conforme o [README](README.md#envio-ao-supabase). Depois, gravar `uno_r4_wifi` por USB e conferir o pulso do relé, as leituras no Monitor Serial a 9600 baud e os POSTs individuais.
 
 ## Evidências e cobertura do histórico
 
@@ -50,5 +61,13 @@ Gravar `uno_r4_wifi` por USB e conferir o pulso do relé e as leituras dos três
 - [Alimentação temporizada do TDS](history/2026/2026-11-25-tds-power-cycle.md).
 - [Acionamento do relé do TDS](history/2026/2026-11-25-tds-relay-control.md).
 - [Intervalo de teste do TDS](history/2026/2026-11-25-tds-test-interval.md).
+- [Faixa de alerta do TDS](history/2026/2026-11-26-tds-alert-range.md).
+- [Consultas individuais na página local](history/2026/2026-11-26-measurement-dashboard.md).
+- [Envio individual ao Supabase](history/2026/2026-11-26-individual-telemetry.md).
+- [Intervalos das medições](history/2026/2026-11-26-sensor-intervals.md).
+- [Ponto de entrada do firmware](history/2026/2026-11-26-firmware-entry-point.md).
+- [Organização das configurações e da bancada](history/2026/2026-11-26-firmware-organization.md).
+- [Logs de medições e envios](history/2026/2026-11-26-serial-measurement-logs.md).
+- [Limite inferior de temperatura](history/2026/2026-11-26-temperature-alert-minimum.md).
 - Código em `src/` e interfaces em `include/`.
 - O histórico local começa com esta reorganização; não representa uma migração completa dos acontecimentos anteriores.

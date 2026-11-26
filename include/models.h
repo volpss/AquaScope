@@ -10,16 +10,6 @@ enum EstadoSensor
   SENSOR_ACIMA_LIMITE = 3
 };
 
-struct LeituraOffline
-{
-  float temperatura;       // 4 bytes
-  float ph;                // 4 bytes
-  float tds;               // 4 bytes
-  uint32_t epochSegundos;   // 4 bytes (Epoch UTC em segundos)
-  uint8_t alertaAtivo;      // 1 byte
-  uint8_t reservado[3];     // 3 bytes (alinhamento: total de 20 bytes)
-};
-
 struct LeiturasSensores
 {
   float temperatura = 0.0;
@@ -28,4 +18,19 @@ struct LeiturasSensores
   EstadoSensor estadoTemperatura = SENSOR_SEM_LEITURA;
   EstadoSensor estadoPh = SENSOR_SEM_LEITURA;
   EstadoSensor estadoTds = SENSOR_SEM_LEITURA;
+};
+
+enum class TipoMedicao : uint8_t
+{
+  Temperatura,
+  Ph,
+  Tds
+};
+
+struct MedicaoPendente
+{
+  float valor;
+  uint32_t epochSegundos;
+  TipoMedicao tipo;
+  bool alertaAtivo;
 };

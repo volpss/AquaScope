@@ -5,7 +5,7 @@ topics: ["firmware", "hardware", "temperatura", "pH", "TDS"]
 summary: "Integradas as leituras reais de temperatura, pH e TDS no firmware completo."
 ---
 
-O usuário confirmou o ajuste de 2,50 V do PH-4502C com o BNC em curto e pediu o firmware completo antes da calibração em solução tampão. O [PlatformIO](../../platformio.ini) seleciona [mainOriginal.cpp](../../src/mainOriginal.cpp) no ambiente padrão `uno_r4_wifi` e o [sketch de bancada](../../src/main.cpp) no ambiente `uno_r4_wifi_ph`.
+O usuário confirmou o ajuste de 2,50 V do PH-4502C com o BNC em curto e pediu o firmware completo antes da calibração em solução tampão. Na época, o [PlatformIO](../../platformio.ini) selecionava o [firmware completo](../../src/main.cpp) pelo arquivo `mainOriginal.cpp` no ambiente padrão `uno_r4_wifi` e o [sketch de bancada](../../src/benches/ph-bench.cpp) pelo arquivo `main.cpp` no ambiente `uno_r4_wifi_ph`.
 
 O [módulo de sensores](../../src/hardware/sensors.cpp) faz a leitura com ADC de 10 bits, em janelas de 30 amostras espaçadas por pelo menos 10 ms. O cálculo do NTC em `A0` mantém o divisor de 10 kΩ. No pH (`A1`) e no TDS (`A2`), o filtro usa a média das 20 amostras centrais. O pH usa 2,500 V como ponto neutro e a inclinação provisória de −5,70 pH/V. O TDS usa a [curva do Gravity TDS](https://wiki.dfrobot.com/sen0244/docs/20305) e compensa a temperatura medida no NTC.
 

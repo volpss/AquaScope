@@ -7,7 +7,7 @@ summary: "Configurado pulso de 3 segundos no controle de alimentação do TDS a 
 
 O [módulo de sensores](../../src/hardware/sensors.cpp) usa `millis()` para programar o acionamento do `D7`. A configuração prevê um MOSFET de canal P chaveando o positivo de 5 V e um resistor externo que mantém o módulo desligado durante o reset. O [circuito e a calibração](../../README.md#alimentação-e-calibração-do-tds) estão descritos no README.
 
-O primeiro pulso começa após a primeira leitura de temperatura e pH. A cada pulso, o firmware aguarda 2,5 segundos, coleta 30 amostras de `A2` e corta a alimentação aos 3 segundos. O [ciclo principal](../../src/mainOriginal.cpp) adia chamadas de rede durante o pulso. Página, API e telemetria reutilizam o último resultado entre ciclos.
+O primeiro pulso começa após a primeira leitura de temperatura e pH. A cada pulso, o firmware aguarda 2,5 segundos, coleta 30 amostras de `A2` e corta a alimentação aos 3 segundos. O [ciclo principal](../../src/main.cpp) adia chamadas de rede durante o pulso. Página, API e telemetria reutilizam o último resultado entre ciclos.
 
 `pio run -e uno_r4_wifi` compilou com 16.240 bytes de RAM e 75.760 bytes de Flash. Ainda faltam montagem, upload, medição física da duração do pulso e verificação da estabilidade da leitura no módulo.
 

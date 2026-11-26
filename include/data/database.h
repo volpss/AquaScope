@@ -3,6 +3,6 @@
 #include <Arduino.h>
 #include "models.h"
 
-// Serialização das leituras e envio HTTPS à API REST do Supabase.
-String montarLeituraJson(const LeituraOffline &item);
+// Serialização das medições e envio HTTPS à API REST do Supabase.
+String montarMedicaoJson(const MedicaoPendente &medicao);
 bool enviarJsonSupabase(const String &conteudoJson);
